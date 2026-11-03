@@ -46,6 +46,16 @@ jobs:
         run: npm ci --ignore-scripts
       - if: env.HAS_DATABASE_URL == 'true'
         run: npm run build
+      # `npm run db:migrate` without the build: the Vercel build never touches the
+      # database, so pending migrations are applied here, before the seed.
+      - name: Migrate
+        if: env.HAS_DATABASE_URL == 'true'
+        run: node dist/database/run-migrations.js
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DB_SCHEMA: freitty
+          DB_SSL: 'true'
+          APP_TIMEZONE: America/Toronto
       # `npm run db:seed` without the build: replaces the data of schema "freitty"
       # in one transaction.
       - name: Seed

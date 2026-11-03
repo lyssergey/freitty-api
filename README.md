@@ -38,7 +38,6 @@ npm run start:dev        # http://localhost:3001/api
 | `npm run db:migrate`                                           | build + apply pending migrations (creates the schema if missing)                            |
 | `npm run db:seed`                                              | build + replace all app data with the demo dataset (one transaction)                        |
 | `npm run migration:generate -- src/database/migrations/<Name>` | diff entities vs DB into a new migration — add it to `MIGRATIONS` (`--check` only verifies) |
-| `npm run vercel-build`                                         | what Vercel runs: `nest build` + pending migrations                                         |
 | `npm run check:vercel-runtime`                                 | loads `dist/serverless.js` without `require(ESM)`, like Vercel does                         |
 
 ## API
@@ -214,7 +213,9 @@ on every child table (sub-orders via their unique `(order_id, position)`), `invo
 - **Migrations, not `synchronize`.** The initial migration was generated from the entities and
   reviewed: shared enum types are created once, statements are grouped, and the schema name comes
   from the DataSource instead of being hard-coded. `migration:generate --check` reports no drift.
-  Migrations run in `vercel-build` (before a deploy goes live), never on a serverless cold start.
+  Migrations run outside the deployment — `npm run db:migrate`, or the reseed workflow before it
+  seeds — never during the Vercel build or on a serverless cold start, so a deploy needs no
+  database access at build time. The runner logs each step and gives up after 90 s.
   They are registered as classes in `src/database/migrations.ts` (`MIGRATIONS`, like `ENTITIES`):
   a glob built from `import.meta.url` silently matches nothing under a checkout path with spaces or
   non-ASCII characters. A migration from `migration:generate` must be appended to `MIGRATIONS` (a
@@ -332,8 +333,9 @@ touches the deployed database.
 
 Seeded dates are relative to the moment `db:seed` runs, so the deployed demo ages: next-action
 countdowns go overdue within hours, and "today", "this week" and the 30-day KPI windows drift after
-a day or two. `.github/workflows/reseed.yml` reseeds the deployed database the way `npm run db:seed`
-does (build, then `dist/database/seeds/run-seed.js`):
+a day or two. `.github/workflows/reseed.yml` applies pending migrations and reseeds the deployed
+database the way `npm run db:migrate` and `npm run db:seed` do (build, then
+`dist/database/run-migrations.js` and `dist/database/seeds/run-seed.js`):
 
 - **Daily**, at 08:00 UTC (03:00 EST / 04:00 EDT in Toronto), so "today", the week and the KPI
   windows are right all day — the order scheduled 2.5 h before the seed still falls on "today".
@@ -345,8 +347,8 @@ does (build, then `dist/database/seeds/run-seed.js`):
 - **Setup**: add a repository secret `DATABASE_URL` (Settings → Secrets and variables → Actions) with
   the Neon pooled connection string the API uses — ideally a role that can only write schema
   `freitty`, since the database is shared (the seed itself refuses any other schema). Only the
-  final seed step receives it: checkout, `npm ci --ignore-scripts` (no npm cache) and the build run
-  without it. Without the secret the job only leaves a notice and skips every step.
+  final migrate and seed steps receive it: checkout, `npm ci --ignore-scripts` (no npm cache) and
+  the build run without it. Without the secret the job only leaves a notice and skips every step.
 
 ## Deploying to Vercel
 
@@ -354,9 +356,10 @@ The API runs as one serverless function: `vercel.json` rewrites every path to `a
 re-exports the handler compiled by `nest build` (`dist/serverless.js`, tsc keeps decorator metadata).
 
 1. Create a Vercel project from this repo (root directory = repo root). `vercel.json` pins the
-   framework preset to "Other", the build command to `npm run vercel-build` and the function
-   region to `fra1` (Frankfurt), next to the Neon endpoint (AWS eu-central-1). If your database
-   lives elsewhere, change `regions` to the Vercel region closest to it.
+   framework preset to "Other", the build command to `npm run build` (the build never connects to
+   the database) and the function region to `fra1` (Frankfurt), next to the Neon endpoint (AWS
+   eu-central-1). If your database lives elsewhere, change `regions` to the Vercel region closest
+   to it.
 2. Add environment variables for **Production** only:
 
    | Variable                | Value                                                                       |
@@ -369,19 +372,16 @@ re-exports the handler compiled by `nest build` (`dist/serverless.js`, tsc keeps
    | `DEMO_USER_EMAIL`       | optional, defaults to `user1@rway-transport.example`                        |
    | `RATE_LIMIT_PER_MINUTE` | optional, defaults to `1000` (10–100000; one bucket may serve all visitors) |
 
-   `DATABASE_URL`, `DB_SCHEMA` and `DB_SSL` must also be available at build time: `vercel-build`
-   applies pending migrations before the deployment goes live. Keep `DATABASE_URL` out of the
-   Preview environment: Preview builds run `vercel-build` too and would migrate the same shared
-   database (without it they fail at the migration step instead). Don't add `NODE_ENV=production`
-   as a build variable — npm would skip devDependencies (Nest CLI, TypeScript) and `nest build`
-   fails.
+   They are read at runtime only. Don't add `NODE_ENV=production` — as a build variable npm would
+   skip devDependencies (Nest CLI, TypeScript) and `nest build` fails.
 
-3. Deploy (`vercel --prod` or a git push). If the database is new, seed it once from your machine
-   with the same `DATABASE_URL`: `npm run db:seed`. Then add `DATABASE_URL` as a GitHub Actions
-   secret too, so the reseed workflow keeps the demo current (see
-   [Keeping the demo fresh](#keeping-the-demo-fresh)).
-4. Check `https://<api-domain>/api/health` → `{"status":"ok","db":"up",…}`.
-5. In the front project set `API_PROXY_TARGET=https://<api-domain>` before building it — the front
+3. Before the first deploy, and whenever a new migration ships, apply migrations from your machine
+   with the same `DATABASE_URL`: `npm run db:migrate` (plus `npm run db:seed` for a new database).
+   Or add `DATABASE_URL` as a GitHub Actions secret and run the reseed workflow, which migrates and
+   then reseeds (see [Keeping the demo fresh](#keeping-the-demo-fresh)).
+4. Deploy (`vercel --prod` or a git push).
+5. Check `https://<api-domain>/api/health` → `{"status":"ok","db":"up",…}`.
+6. In the front project set `API_PROXY_TARGET=https://<api-domain>` before building it — the front
    proxies `/api/*` to the API, so the browser never calls it cross-origin.
 
 Before deploying, `npm run build && npm run check:vercel-runtime` verifies the bundle loads the way

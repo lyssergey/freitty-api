@@ -10,7 +10,7 @@ import { configureApp } from './app-setup.js';
  * Vercel serverless entry (re-exported by `api/index.js`). The Nest app is built
  * once per warm instance and its Express instance serves every invocation. The
  * code is compiled ahead of time by `nest build` (tsc keeps decorator metadata);
- * migrations run at build time (`vercel-build`), never on a cold start.
+ * migrations run separately (`npm run db:migrate`), never on a cold start.
  */
 let server: Promise<express.Express> | null = null;
 

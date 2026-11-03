@@ -25,7 +25,6 @@
     "migration:generate": "npm run build && typeorm migration:generate -d dist/database/data-source.js",
     "db:migrate": "npm run build && node dist/database/run-migrations.js",
     "db:seed": "npm run build && node dist/database/seeds/run-seed.js",
-    "vercel-build": "nest build && node dist/database/run-migrations.js",
     "check:vercel-runtime": "node --no-experimental-require-module scripts/check-vercel-runtime.mjs"
   },
   "dependencies": {
