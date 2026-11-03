@@ -1,3 +1,4 @@
+import pg from 'pg';
 import type { DataSourceOptions } from 'typeorm';
 import type { DatabaseConfig } from '../config/configuration.js';
 import { resolveAppSchema } from './app-schema.js';
@@ -20,6 +21,10 @@ export type PostgresOptions = Extract<DataSourceOptions, { type: 'postgres' }>;
 export function buildDataSourceOptions(db: DatabaseConfig): PostgresOptions {
   return {
     type: 'postgres',
+    // Passed explicitly: TypeORM would `require()` the driver by a variable name,
+    // which Vercel's file tracing cannot follow, so the function would ship without
+    // `pg` and fail on its first request.
+    driver: pg,
     url: db.url,
     schema: resolveAppSchema(db.schema),
     applicationName: 'freitty-api',
