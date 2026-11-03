@@ -359,7 +359,9 @@ re-exports the handler compiled by `nest build` (`dist/serverless.js`, tsc keeps
    framework preset to "Other", the build command to `npm run build` (the build never connects to
    the database) and the function region to `fra1` (Frankfurt), next to the Neon endpoint (AWS
    eu-central-1). If your database lives elsewhere, change `regions` to the Vercel region closest
-   to it.
+   to it. With a build command the "Other" preset requires a static output directory, so
+   `public/` exists and holds only a `robots.txt` that keeps crawlers off the API; every other
+   path is rewritten to the function.
 2. Add environment variables for **Production** only:
 
    | Variable                | Value                                                                       |
