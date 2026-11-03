@@ -2,12 +2,10 @@ import type { DataSourceOptions } from 'typeorm';
 import type { DatabaseConfig } from '../config/configuration.js';
 import { resolveAppSchema } from './app-schema.js';
 import { ENTITIES } from './entities.js';
+import { MIGRATIONS } from './migrations.js';
 import { SnakeNamingStrategy } from './snake-naming.strategy.js';
 
 export type PostgresOptions = Extract<DataSourceOptions, { type: 'postgres' }>;
-
-/** Compiled migrations (`dist/database/migrations/*.js`); scripts always run from `dist`. */
-const MIGRATIONS_GLOB = new URL('./migrations/*.js', import.meta.url).pathname;
 
 /**
  * The one TypeORM configuration, used by the Nest app (`DatabaseModule`), the
@@ -27,7 +25,7 @@ export function buildDataSourceOptions(db: DatabaseConfig): PostgresOptions {
     applicationName: 'freitty-api',
     entities: ENTITIES,
     namingStrategy: new SnakeNamingStrategy(),
-    migrations: [MIGRATIONS_GLOB],
+    migrations: MIGRATIONS,
     migrationsTableName: 'migrations',
     migrationsTransactionMode: 'all',
     migrationsRun: false,

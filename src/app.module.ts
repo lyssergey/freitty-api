@@ -18,6 +18,9 @@ import { UsersModule } from './modules/users/users.module.js';
       cache: true,
       load: [() => configuration()],
       validate: validateEnv,
+      // In tests, never read the developer's .env: test/setup-e2e.ts sets the env
+      // explicitly, so the e2e run always hits the local test database.
+      ignoreEnvFile: process.env.NODE_ENV === 'test',
     }),
     DatabaseModule,
     UsersModule,

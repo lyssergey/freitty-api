@@ -8,6 +8,10 @@ import { ensureSchema } from './ensure-schema.js';
 async function run(): Promise<void> {
   await dataSource.initialize();
   try {
+    // An empty list would report "up to date" and leave the database without tables.
+    if (dataSource.migrations.length === 0) {
+      throw new Error('no migrations registered — see src/database/migrations.ts');
+    }
     const schema = await ensureSchema(dataSource);
     const applied = await dataSource.runMigrations({ transaction: 'all' });
     if (applied.length === 0) {

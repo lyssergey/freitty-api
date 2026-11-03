@@ -4,9 +4,10 @@ import { CurrentUser } from '../../common/auth/current-user.decorator.js';
 import { BoardOrdersQuery, ExportOrdersQuery, ListOrdersQuery } from './dto/order-filters.query.js';
 import type { OrderBoardResponse, OrderDetail, OrderListResponse } from './order.types.js';
 import { OrdersService } from './orders.service.js';
+import { ParseOrderNumberPipe } from './parse-order-number.pipe.js';
 
 /** Excel only reads a CSV as UTF-8 ("Montréal", "×") when it starts with a BOM. */
-const UTF8_BOM = '﻿';
+const UTF8_BOM = '\uFEFF';
 
 @Controller('orders')
 export class OrdersController {
@@ -40,7 +41,10 @@ export class OrdersController {
 
   /** Order numbers are case-insensitive (`fr001383` → `FR001383`). */
   @Get(':number')
-  detail(@CurrentUser() user: AuthUser, @Param('number') number: string): Promise<OrderDetail> {
-    return this.orders.detail(user, number.trim().toUpperCase());
+  detail(
+    @CurrentUser() user: AuthUser,
+    @Param('number', ParseOrderNumberPipe) number: string,
+  ): Promise<OrderDetail> {
+    return this.orders.detail(user, number);
   }
 }

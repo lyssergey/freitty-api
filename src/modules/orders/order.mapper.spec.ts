@@ -390,6 +390,28 @@ describe('toOrderDetail', () => {
     ]);
   });
 
+  it('lists an operation split per unit type standard first', () => {
+    const at = new Date('2026-04-16T20:00:00Z');
+    const split = toOrderDetail(
+      makeOrder({
+        operations: [
+          operation('a', {
+            kind: 'loading',
+            qty: 12,
+            unitType: 'xl',
+            rateCents: 2200,
+            appliedAt: at,
+          }),
+          operation('b', { kind: 'loading', qty: 15, appliedAt: at }),
+        ],
+      }),
+    );
+    expect(split.operations.map((op) => [op.unitType, op.qty, op.amountCents])).toEqual([
+      ['standard', 15, 27_000],
+      ['xl', 12, 26_400],
+    ]);
+  });
+
   it('groups supplies by category and computes line totals', () => {
     expect(detail.supplies.map((s) => [s.sku, s.lineTotalCents])).toEqual([
       ['SEC-STR-12', 2600],

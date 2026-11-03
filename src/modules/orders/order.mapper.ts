@@ -119,8 +119,15 @@ export function toOrderListItem(order: Order): OrderListItem {
 
 export function toOrderDetail(order: Order): OrderDetail {
   const item = toOrderListItem(order);
+  const unitRank = (op: Operation) => UNIT_TYPE_ORDER.indexOf(op.unitType);
+  // By time; an op split per unit type (same time) lists standard first.
   const operations = [...order.operations]
-    .sort((a, b) => a.appliedAt.getTime() - b.appliedAt.getTime() || a.id.localeCompare(b.id))
+    .sort(
+      (a, b) =>
+        a.appliedAt.getTime() - b.appliedAt.getTime() ||
+        unitRank(a) - unitRank(b) ||
+        a.id.localeCompare(b.id),
+    )
     .map(toOperationItem);
   const supplies = [...order.supplies].sort(bySupplyCategoryThenName).map(toSupplyItem);
   const operationsCents = sum(operations, (op) => op.amountCents);

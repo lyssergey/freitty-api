@@ -4,6 +4,7 @@ import { containsPattern } from '../../common/utils/like.js';
 import { tableName } from '../../database/table-name.js';
 import { Carrier } from '../carriers/carrier.entity.js';
 import { Hub } from '../hubs/hub.entity.js';
+import { Invoice } from './entities/invoice.entity.js';
 import { OrderAlert } from './entities/order-alert.entity.js';
 import { SubOrder } from './entities/sub-order.entity.js';
 import {
@@ -112,13 +113,23 @@ export function applyOrderFilters<T extends ObjectLiteral>(
   if (filters.status) qb.andWhere('o.status = :status', { status: filters.status });
 
   if (filters.q) {
+    // Invoice numbers are displayed as `#001812`: one leading '#' is not part of
+    // them. A bare '#' must not match every invoiced order, so it skips invoices.
+    const invoiceQ = filters.q.replace(/^#/, '');
+    const invoiceMatch = invoiceQ
+      ? `OR EXISTS (SELECT 1 FROM ${tableName(qb.dataSource, Invoice)} i
+                   WHERE i.order_id = o.id AND i.number ILIKE :invoiceQ)`
+      : '';
     qb.andWhere(
       `(o.number ILIKE :q OR o.ref_number ILIKE :q OR o.destination ILIKE :q
         OR EXISTS (SELECT 1 FROM ${tableName(qb.dataSource, Carrier)} c
                    WHERE c.id = o.carrier_id AND c.name ILIKE :q)
         OR EXISTS (SELECT 1 FROM ${tableName(qb.dataSource, SubOrder)} so
-                   WHERE so.order_id = o.id AND (so.number ILIKE :q OR so.ref_number ILIKE :q)))`,
-      { q: containsPattern(filters.q) },
+                   WHERE so.order_id = o.id AND (so.number ILIKE :q OR so.ref_number ILIKE :q))
+        ${invoiceMatch})`,
+      invoiceQ
+        ? { q: containsPattern(filters.q), invoiceQ: containsPattern(invoiceQ) }
+        : { q: containsPattern(filters.q) },
     );
   }
 

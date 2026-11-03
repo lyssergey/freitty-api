@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Throwaway Postgres for the e2e tests: mirrors docker-compose.test.yml.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: freitty_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d freitty_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    # What the env validation needs, pointing at the service above. The e2e setup
+    # sets the rest itself and refuses any database that is not local.
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5433/freitty_test
+      DB_SCHEMA: freitty
+      DB_SSL: 'false'
+      APP_TIMEZONE: America/Toronto
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npm run check:vercel-runtime
+      - run: npm run test:e2e

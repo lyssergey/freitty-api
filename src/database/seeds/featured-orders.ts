@@ -68,7 +68,9 @@ export function featuredOrders(clock: SeedClock): OrderSpec[] {
         { kind: UNLOADING, qty: 6, unitType: STD, at: day(-3, '13:40') },
         { kind: UNLOADING, qty: 12, unitType: XL, at: day(-2, '09:30'), photos: 3 },
         { kind: RESTACK, qty: 12, unitType: XL, at: day(-2, '11:00') },
-        { kind: CONSOLIDATION, qty: 27, unitType: STD, at: day(-1, '16:00') },
+        // Booked per unit type, like the cargo (15 Std + 12 XL).
+        { kind: CONSOLIDATION, qty: 15, unitType: STD, at: day(-1, '16:00') },
+        { kind: CONSOLIDATION, qty: 12, unitType: XL, at: day(-1, '16:00') },
       ],
       supplies: [
         { sku: 'SEC-STR-24', qty: 6 },
@@ -311,8 +313,10 @@ export function featuredOrders(clock: SeedClock): OrderSpec[] {
         { kind: UNLOADING, qty: 18, unitType: STD, at: day(-3, '07:40') },
         { kind: UNLOADING, qty: 6, unitType: XL, at: day(-3, '08:25') },
         { kind: UNLOADING, qty: 9, unitType: STD, at: day(-3, '09:10') },
-        { kind: CONSOLIDATION, qty: 33, unitType: STD, at: day(-3, '13:00') },
-        { kind: LOADING, qty: 33, unitType: STD, at: day(-2, '08:30') },
+        { kind: CONSOLIDATION, qty: 27, unitType: STD, at: day(-3, '13:00') },
+        { kind: CONSOLIDATION, qty: 6, unitType: XL, at: day(-3, '13:00') },
+        { kind: LOADING, qty: 27, unitType: STD, at: day(-2, '08:30') },
+        { kind: LOADING, qty: 6, unitType: XL, at: day(-2, '08:30') },
       ],
     },
   ];

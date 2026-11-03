@@ -1,0 +1,58 @@
+name: Reseed demo data
+
+# The demo dataset is relative to the moment it is seeded, so it ages: countdowns
+# go overdue, "today" and the KPI windows drift. Reseeding daily at 08:00 UTC —
+# 03:00 EST / 04:00 EDT in Toronto — keeps the dates current all day (the order
+# scheduled "2.5 h ago" stays today). Before a demo, run it by hand from the
+# Actions tab ("Run workflow") to reset the countdowns as well.
+on:
+  schedule:
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reseed-demo
+  cancel-in-progress: false
+
+jobs:
+  reseed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Only whether the secret is set. The connection string itself is given to the
+    # seed step alone: no third-party code (actions, npm, the build) runs next to it.
+    env:
+      HAS_DATABASE_URL: ${{ secrets.DATABASE_URL != '' }}
+
+    # Without the secret (forks, a fresh repo) the job only leaves a notice.
+    steps:
+      - name: Skip without a DATABASE_URL secret
+        if: env.HAS_DATABASE_URL != 'true'
+        run: echo "::notice title=Reseed skipped::Add the DATABASE_URL repository secret to reseed the demo database."
+      - uses: actions/checkout@v7
+        if: env.HAS_DATABASE_URL == 'true'
+        with:
+          persist-credentials: false
+      # No npm cache: nothing restored from a cache runs in this job.
+      - uses: actions/setup-node@v7
+        if: env.HAS_DATABASE_URL == 'true'
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      # No dependency runs an install script.
+      - if: env.HAS_DATABASE_URL == 'true'
+        run: npm ci --ignore-scripts
+      - if: env.HAS_DATABASE_URL == 'true'
+        run: npm run build
+      # `npm run db:seed` without the build: replaces the data of schema "freitty"
+      # in one transaction.
+      - name: Seed
+        if: env.HAS_DATABASE_URL == 'true'
+        run: node dist/database/seeds/run-seed.js
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DB_SCHEMA: freitty
+          DB_SSL: 'true'
+          APP_TIMEZONE: America/Toronto

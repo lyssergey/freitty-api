@@ -1,5 +1,15 @@
 import { Transform, Type } from 'class-transformer';
-import { IsIn, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min } from 'class-validator';
+import {
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+  NotContains,
+} from 'class-validator';
 import { DatePreset } from '../../../common/time/periods.js';
 import { OrderSegment, OrderStatus } from '../order.enums.js';
 
@@ -25,11 +35,15 @@ export class OrderFiltersQuery {
   @IsIn(Object.values(DatePreset))
   period: DatePreset = DatePreset.LAST_30_DAYS;
 
-  /** Search in order / sub-order numbers, refs, destination and carrier. */
+  /**
+   * Search in order / sub-order numbers, refs, destination, carrier and invoice
+   * number (`#001812` or `001812`). Postgres rejects NUL bytes in text, hence 400.
+   */
   @IsOptional()
   @Transform(trimmed)
   @IsString()
   @MaxLength(64)
+  @NotContains('\u0000', { message: 'q must not contain NUL characters' })
   q?: string;
 }
 
@@ -38,10 +52,12 @@ export class ListOrdersQuery extends OrderFiltersQuery {
   @IsIn(Object.values(OrderStatus))
   status?: OrderStatus;
 
+  /** Bounded like the front's URL parsing; a huge page would overflow the SQL OFFSET. */
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(100_000)
   page = 1;
 
   @IsOptional()

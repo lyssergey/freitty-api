@@ -61,6 +61,21 @@ describe('zoned time (America/Toronto)', () => {
     ).toBe('2026-11-01T10:00:00.000Z');
   });
 
+  it('resolves DST transitions the same way east of UTC (Europe/Berlin)', () => {
+    const berlin = 'Europe/Berlin';
+    // 02:30 happens twice on 25 Oct 2026, in CEST then in CET: the earlier one wins.
+    expect(
+      zonedTimeToUtc({ year: 2026, month: 10, day: 25, hour: 2, minute: 30 }, berlin).toISOString(),
+    ).toBe('2026-10-25T00:30:00.000Z');
+    // 02:30 does not exist on 29 Mar 2026 — resolved forward to 03:30 CEST.
+    expect(
+      zonedTimeToUtc({ year: 2026, month: 3, day: 29, hour: 2, minute: 30 }, berlin).toISOString(),
+    ).toBe('2026-03-29T01:30:00.000Z');
+    expect(
+      zonedTimeToUtc({ year: 2026, month: 10, day: 25, hour: 3, minute: 0 }, berlin).toISOString(),
+    ).toBe('2026-10-25T02:00:00.000Z');
+  });
+
   it('computes seed-style day offsets across a DST change', () => {
     const now = new Date('2026-03-09T14:00:00Z'); // Mon 10:00 EDT, the day after DST started
     expect(zonedDayAt(now, TZ, 0, '09:00').toISOString()).toBe('2026-03-09T13:00:00.000Z');

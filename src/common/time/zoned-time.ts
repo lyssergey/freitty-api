@@ -71,7 +71,8 @@ export function zoneOffsetMs(instant: Date, timeZone: string): number {
 
 /**
  * The instant at which clocks in `timeZone` show `local`. Wall times skipped by a
- * DST jump resolve forward (02:30 → 03:30); repeated ones pick the earlier instant.
+ * DST jump resolve forward (02:30 → 03:30); repeated ones pick the earlier instant
+ * (in every zone, east or west of UTC).
  */
 export function zonedTimeToUtc(local: LocalDateTime, timeZone: string): Date {
   const wallAsUtc = Date.UTC(
@@ -82,14 +83,19 @@ export function zonedTimeToUtc(local: LocalDateTime, timeZone: string): Date {
     local.minute,
     local.second ?? 0,
   );
-  const firstGuess = wallAsUtc - zoneOffsetMs(new Date(wallAsUtc), timeZone);
-  const offsetAtGuess = zoneOffsetMs(new Date(firstGuess), timeZone);
-  const secondGuess = wallAsUtc - offsetAtGuess;
-  if (secondGuess === firstGuess) return new Date(firstGuess);
-  // The guess crossed a DST transition. If the corrected instant reads back as the
-  // requested wall time, it is the answer; otherwise the wall time does not exist.
-  if (zoneOffsetMs(new Date(secondGuess), timeZone) === offsetAtGuess) return new Date(secondGuess);
-  return new Date(Math.max(firstGuess, secondGuess));
+  // One candidate per offset in force a day before and a day after the wall time.
+  const candidate = (shiftMs: number) =>
+    wallAsUtc - zoneOffsetMs(new Date(wallAsUtc + shiftMs), timeZone);
+  const before = candidate(-DAY_MS);
+  const after = candidate(DAY_MS);
+  if (before === after) return new Date(before); // no transition nearby
+  // A transition is near: keep the candidates whose wall time reads back as `local`.
+  // Both do for a repeated wall time (take the earlier), neither for a skipped one:
+  // `before` then lands after the jump, i.e. the wall time pushed forward.
+  const readsBack = [before, after].filter(
+    (instant) => instant + zoneOffsetMs(new Date(instant), timeZone) === wallAsUtc,
+  );
+  return new Date(readsBack.length > 0 ? Math.min(...readsBack) : before);
 }
 
 /** Calendar arithmetic on a plain date (no zone involved). */

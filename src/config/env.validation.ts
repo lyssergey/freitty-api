@@ -31,6 +31,15 @@ export class EnvironmentVariables {
   @IsString()
   CORS_ORIGINS = 'http://localhost:3000';
 
+  /**
+   * Requests per minute per client IP, counted in memory (so per serverless
+   * instance). Behind the front's rewrite proxy all visitors may share one bucket.
+   */
+  @IsInt()
+  @Min(10)
+  @Max(100_000)
+  RATE_LIMIT_PER_MINUTE = 1000;
+
   @IsString()
   @MinLength(1)
   DATABASE_URL!: string;
@@ -68,6 +77,7 @@ export function validateEnv(config: Record<string, unknown>): EnvironmentVariabl
     {
       ...config,
       PORT: toInt(config.PORT),
+      RATE_LIMIT_PER_MINUTE: toInt(config.RATE_LIMIT_PER_MINUTE),
       DB_SSL: toBool(config.DB_SSL),
       DB_LOGGING: toBool(config.DB_LOGGING),
     },

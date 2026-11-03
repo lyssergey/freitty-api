@@ -8,6 +8,7 @@ import {
   OrderType,
   ServiceKind,
   TrailerType,
+  UNIT_TYPE_ORDER,
   UnitType,
 } from '../../modules/orders/order.enums.js';
 import { addMinutes, type SeedClock } from './clock.js';
@@ -80,7 +81,7 @@ const DOCK_BAYS = ['A', 'B', 'C', 'D'];
  * ~380 closed orders spread over the last 540 days (deterministic for a given
  * `now`). Numbers and client refs are assigned in creation order, so the newest
  * historical order is FR001667. Every historical order is older (by updated_at =
- * closed_at, at least a day ago) than every featured order.
+ * closed_at, before 16:00 yesterday at the latest) than every featured order.
  */
 export function historicalOrders(rng: Random, clock: SeedClock): OrderSpec[] {
   const specs = closingTimes(rng, clock).map((closedAt) => closedOrder(rng, clock, closedAt));
@@ -102,18 +103,28 @@ export function historicalOrders(rng: Random, clock: SeedClock): OrderSpec[] {
 
 /**
  * When orders were closed, oldest first. The two rolling 30-day windows hold exact
- * counts; their closings stay at least a day away from the window edges (days 2–28
- * and 31–58 ago) so the dashboard numbers survive a day of clock drift after
- * seeding. Older weeks follow a gently growing, seasonal weekly rate.
+ * counts; their closings stay at least a day inside the older window edges (days
+ * 1–28 and 31–58 ago) so the dashboard numbers survive a day of clock drift after
+ * seeding. Two closings land yesterday and one the day before, so the Day activity
+ * chart compares 2 with 1 rather than an empty day; yesterday's are before 16:00
+ * local, i.e. more than 8 h ago and older than every featured order. Older weeks
+ * follow a gently growing, seasonal weekly rate.
  */
 function closingTimes(rng: Random, clock: SeedClock): Date[] {
   const closingOn = (daysAgo: number) => clock.day(-daysAgo, randomTime(rng, 7, 19));
+  const yesterdayBefore16 = () => clock.day(-1, randomTime(rng, 7, 16)); // 07:00–15:55
   const spread = (count: number, firstDay: number, lastDay: number) =>
     Array.from({ length: count }, (_, i) =>
       closingOn(firstDay + Math.floor(((i + rng.float()) * (lastDay - firstDay + 1)) / count)),
     );
 
-  const times = [...spread(CLOSED_LAST_30D, 2, 28), ...spread(CLOSED_PREVIOUS_30D, 31, 58)];
+  const times = [
+    yesterdayBefore16(),
+    yesterdayBefore16(),
+    closingOn(2),
+    ...spread(CLOSED_LAST_30D - 3, 3, 28),
+    ...spread(CLOSED_PREVIOUS_30D, 31, 58),
+  ];
 
   const firstOlderDay = 61;
   for (let weekStart = firstOlderDay; weekStart <= OLDEST_DAYS_AGO; weekStart += 7) {
@@ -294,9 +305,10 @@ function scheduledBefore(rng: Random, clock: SeedClock, closedAt: Date): Date {
 
 /**
  * Warehouse operations between the scheduled slot and the closing. Cross-dock:
- * unloading + loading per cargo line (a transload service replaces both with one
+ * unloading + loading per cargo line (a transload service replaces both with a
  * transload), optional restack (20%), disposal (5%) and wrapping (shrink-wrap
- * service). Consolidation: unloading per sub-order, consolidation, loading.
+ * service). Consolidation: unloading per sub-order, then consolidation and loading.
+ * Operations on the whole cargo are booked per unit type (standard first).
  */
 function operationsFor(
   rng: Random,
@@ -313,7 +325,13 @@ function operationsFor(
   const at = (fraction: number) =>
     new Date(Math.round((order.scheduledAt.getTime() + span * fraction) / 60_000) * 60_000);
   const counted = (line: CargoSpec) => line.actual ?? line.declared;
-  const total = order.lines.reduce((sum, line) => sum + counted(line), 0);
+  // The whole cargo per unit type, so XL pallets are shown as XL and loaded at the XL rate.
+  const perUnit = UNIT_TYPE_ORDER.flatMap((unitType) => {
+    const ofType = order.lines.filter((line) => line.unitType === unitType);
+    return ofType.length > 0
+      ? [{ unitType, qty: ofType.reduce((sum, line) => sum + counted(line), 0) }]
+      : [];
+  });
   const mainUnit = [...order.lines].sort((a, b) => b.declared - a.declared)[0]!.unitType;
   const trailer = order.trailerNumber;
   const ops: OperationSpec[] = [];
@@ -328,32 +346,28 @@ function operationsFor(
         photos: rng.int(0, 3),
       }),
     );
-    ops.push({
-      kind: OperationKind.CONSOLIDATION,
-      qty: total,
-      unitType: UnitType.STANDARD,
-      at: at(0.5),
-    });
-    ops.push({
-      kind: OperationKind.LOADING,
-      qty: total,
-      unitType: UnitType.STANDARD,
-      at: at(0.85),
-      trailer,
-    });
+    for (const cargo of perUnit) {
+      ops.push({ kind: OperationKind.CONSOLIDATION, ...cargo, at: at(0.5) });
+    }
+    for (const cargo of perUnit) {
+      ops.push({ kind: OperationKind.LOADING, ...cargo, at: at(0.85), trailer });
+    }
     return ops;
   }
 
   const transload = order.services.includes(ServiceKind.TRANSLOAD);
   if (transload) {
-    ops.push({
-      kind: OperationKind.TRANSLOAD,
-      qty: total,
-      unitType: mainUnit,
-      at: at(0.3),
-      trailer,
-      photos: rng.int(0, 3),
-    });
+    // One transload, booked per unit type: its photos go on the first line.
+    const photos = rng.int(0, 3);
+    perUnit.forEach((cargo, i) =>
+      ops.push({
+        kind: OperationKind.TRANSLOAD,
+        ...cargo,
+        at: at(0.3),
+        trailer,
+        photos: i === 0 ? photos : 0,
+      }),
+    );
   } else {
     for (const line of order.lines) {
       ops.push({
@@ -367,7 +381,9 @@ function operationsFor(
     }
   }
   if (rng.chance(0.2)) {
-    ops.push({ kind: OperationKind.RESTACK, qty: total, unitType: mainUnit, at: at(0.4) });
+    for (const cargo of perUnit) {
+      ops.push({ kind: OperationKind.RESTACK, ...cargo, at: at(0.4) });
+    }
   }
   if (rng.chance(0.05)) {
     ops.push({
@@ -380,7 +396,9 @@ function operationsFor(
     });
   }
   if (order.services.includes(ServiceKind.SHRINK_WRAP)) {
-    ops.push({ kind: OperationKind.WRAPPING, qty: total, unitType: mainUnit, at: at(0.6) });
+    for (const cargo of perUnit) {
+      ops.push({ kind: OperationKind.WRAPPING, ...cargo, at: at(0.6) });
+    }
   }
   if (!transload) {
     for (const line of order.lines) {

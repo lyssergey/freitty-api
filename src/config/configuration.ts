@@ -9,6 +9,8 @@ export interface AppConfig {
   nodeEnv: EnvironmentVariables['NODE_ENV'];
   port: number;
   corsOrigins: string[];
+  /** Requests per minute per client IP (per instance). */
+  rateLimitPerMinute: number;
   /** IANA zone used for business dates (filters, activity buckets, CSV). */
   timezone: string;
   demoUserEmail: string;
@@ -37,6 +39,7 @@ export function configuration(env: Record<string, unknown> = process.env): RootC
       corsOrigins: vars.CORS_ORIGINS.split(',')
         .map((origin) => origin.trim())
         .filter(Boolean),
+      rateLimitPerMinute: vars.RATE_LIMIT_PER_MINUTE,
       timezone: vars.APP_TIMEZONE,
       demoUserEmail: vars.DEMO_USER_EMAIL.trim().toLowerCase(),
       database: {

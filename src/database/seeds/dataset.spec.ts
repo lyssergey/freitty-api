@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { completedWindows, DAY_MS } from '../../common/time/periods.js';
+import { ACTIVITY_BUCKETS, completedWindows, DAY_MS } from '../../common/time/periods.js';
+import { formatZonedDate, startOfZonedDay } from '../../common/time/zoned-time.js';
+import { summarizeActivity } from '../../modules/dashboard/activity.js';
+import type { ActivityRow } from '../../modules/dashboard/activity.sql.js';
 import {
   ACTIVE_ORDER_STATUSES,
   CLIENT_NEXT_ACTIONS,
+  OperationKind,
   OrderStatus,
+  OrderType,
   type NextActionKind,
 } from '../../modules/orders/order.enums.js';
 import { buildDataset } from './dataset.js';
@@ -66,6 +71,27 @@ function stats(dataset: Dataset, now: Date) {
   };
 }
 
+/** Completed orders per local day, oldest first: the dashboard's Day chart (see activity.sql.ts). */
+function dayActivity(dataset: Dataset, now: Date): ActivityRow[] {
+  const closedOn = new Map<string, number>();
+  for (const o of dataset.orders.filter((o) => o.status === OrderStatus.CLOSED)) {
+    const day = formatZonedDate(o.closedAt!, TZ);
+    closedOn.set(day, (closedOn.get(day) ?? 0) + 1);
+  }
+  const { count } = ACTIVITY_BUCKETS.day;
+  return Array.from({ length: count }, (_, i) => {
+    const start = formatZonedDate(startOfZonedDay(now, TZ, i - count + 1), TZ);
+    return { start, completed: closedOn.get(start) ?? 0, spendCents: 0, paidInvoices: 0 };
+  });
+}
+
+/** Quantity per unit type, e.g. `{ standard: 27, xl: 6 }`. */
+function qtyPerUnit(rows: Array<{ unitType: string; qty: number }>): Record<string, number> {
+  const sums: Record<string, number> = {};
+  for (const { unitType, qty } of rows) sums[unitType] = (sums[unitType] ?? 0) + qty;
+  return sums;
+}
+
 describe.each(NOWS)('buildDataset(%s)', (now) => {
   const dataset = buildDataset(now, TZ);
   const byNumber = new Map(dataset.orders.map((o) => [o.number, o]));
@@ -86,6 +112,14 @@ describe.each(NOWS)('buildDataset(%s)', (now) => {
     const later = new Date(now.getTime() + 20 * 3_600_000);
     const { closedLast30d, closedPrevious30d } = stats(dataset, later);
     expect([closedLast30d, closedPrevious30d]).toEqual([24, 24]);
+  });
+
+  it('closes 2 orders yesterday and at least 1 the day before (Day comparison > 0)', () => {
+    const rows = dayActivity(dataset, now);
+    const [dayBefore, yesterday] = rows.slice(-3, -1).map((row) => row.completed);
+    expect(yesterday).toBe(2);
+    expect(dayBefore).toBeGreaterThanOrEqual(1);
+    expect(summarizeActivity(rows).comparison.completedChangePct).toBeGreaterThan(0);
   });
 
   it('orders the list and recent orders like the mockups', () => {
@@ -203,6 +237,49 @@ describe.each(NOWS)('buildDataset(%s)', (now) => {
       ['standard', 10, 12],
     ]);
     expect(dataset.orderSupplies.filter((s) => s.orderId === order.id)).toHaveLength(3);
+  });
+
+  it('books consolidation and loading per unit type, as counted', () => {
+    for (const order of dataset.orders.filter((o) => o.type === OrderType.CONSOLIDATION)) {
+      const counted = qtyPerUnit(
+        dataset.cargoItems
+          .filter((c) => c.orderId === order.id)
+          .map((c) => ({ unitType: c.unitType, qty: c.actualQty ?? c.declaredQty })),
+      );
+      for (const kind of [OperationKind.CONSOLIDATION, OperationKind.LOADING]) {
+        const ops = dataset.operations.filter((op) => op.orderId === order.id && op.kind === kind);
+        if (ops.length > 0) expect(qtyPerUnit(ops), `${order.number} ${kind}`).toEqual(counted);
+      }
+    }
+    // FR001677 loads 27 Std + 6 XL, the XL pallets at the XL rate.
+    const ops = dataset.operations.filter((op) => op.orderId === byNumber.get('FR001677')!.id);
+    expect(ops.reduce((sum, op) => sum + (op.billable ? op.qty * op.rateCents : 0), 0)).toBe(
+      153_300,
+    );
+  });
+
+  it('never books more of a unit type than was counted (mixed cross-docks too)', () => {
+    for (const order of dataset.orders) {
+      const counted = qtyPerUnit(
+        dataset.cargoItems
+          .filter((c) => c.orderId === order.id)
+          .map((c) => ({ unitType: c.unitType, qty: c.actualQty ?? c.declaredQty })),
+      );
+      const ops = dataset.operations.filter((op) => op.orderId === order.id);
+      for (const kind of new Set(ops.map((op) => op.kind))) {
+        if (kind === OperationKind.DISPOSAL) continue;
+        const booked = qtyPerUnit(ops.filter((op) => op.kind === kind));
+        for (const [unitType, qty] of Object.entries(booked)) {
+          expect(qty, `${order.number} ${kind} ${unitType}`).toBeLessThanOrEqual(
+            counted[unitType] ?? 0,
+          );
+        }
+        // Transload and wrapping handle the whole cargo.
+        if (kind === OperationKind.TRANSLOAD || kind === OperationKind.WRAPPING) {
+          expect(booked, `${order.number} ${kind}`).toEqual(counted);
+        }
+      }
+    }
   });
 });
 

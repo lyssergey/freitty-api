@@ -1,0 +1,20 @@
+# Throwaway Postgres for the e2e tests only (npm run db:test:up / db:test:down).
+# Port 5433 never clashes with a local dev database, the port is bound to the
+# loopback interface only, and tmpfs storage makes every `up` start empty.
+services:
+  postgres-test:
+    image: postgres:17-alpine
+    container_name: freitty_pg_test
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: freitty_test
+    ports:
+      - '127.0.0.1:5433:5432'
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d freitty_test']
+      interval: 3s
+      timeout: 3s
+      retries: 20
