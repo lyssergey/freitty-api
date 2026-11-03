@@ -1,0 +1,58 @@
+{
+  "name": "freitty-api",
+  "version": "0.1.0",
+  "description": "Freitty client cabinet API — orders, dashboard KPIs and activity for a logistics platform",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "24.x",
+    "npm": ">=10.0.0"
+  },
+  "scripts": {
+    "build": "nest build",
+    "format": "prettier --write \"src/**/*.ts\" \"scripts/**/*.mjs\" \"api/**/*.js\"",
+    "start": "nest start",
+    "start:dev": "nest start --watch",
+    "start:prod": "node dist/main.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "oxlint -c oxlint.json --deny-warnings src/ scripts/ api/",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "migration:generate": "npm run build && typeorm migration:generate -d dist/database/data-source.js",
+    "db:migrate": "npm run build && node dist/database/run-migrations.js",
+    "db:seed": "npm run build && node dist/database/seeds/run-seed.js",
+    "vercel-build": "nest build && node dist/database/run-migrations.js",
+    "check:vercel-runtime": "node --no-experimental-require-module scripts/check-vercel-runtime.mjs"
+  },
+  "dependencies": {
+    "@nestjs/common": "^12.3.2",
+    "@nestjs/config": "^12.0.1",
+    "@nestjs/core": "^12.3.2",
+    "@nestjs/platform-express": "^12.3.2",
+    "@nestjs/typeorm": "^12.0.2",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.15.1",
+    "dotenv": "^18.0.9",
+    "express": "^5.3.0",
+    "express-rate-limit": "^8.7.3",
+    "helmet": "^8.3.0",
+    "pg": "^8.23.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "typeorm": "^1.1.2"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^12.0.11",
+    "@nestjs/schematics": "^12.0.12",
+    "@nestjs/testing": "^12.3.2",
+    "@types/express": "^5.0.6",
+    "@types/node": "^24.19.2",
+    "@types/pg": "^8.23.1",
+    "oxlint": "^1.90.0",
+    "prettier": "^3.9.10",
+    "source-map-support": "^0.5.21",
+    "typescript": "~6.0.3",
+    "vitest": "^5.1.0"
+  }
+}
